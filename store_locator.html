@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Store Locator</title>
+    <meta name="viewport" content="initial-scale=1.0, user-scalable=no">
+    <meta charset="utf-8">
+    <style>
+      html, body {
+			height: 100%;
+			margin: 0;
+			padding: 0;
+			font-size: 12px;
+			font-family: Helvetica;
+		}
+	#map-canvas {
+			height: 100%;
+		} 
+    </style>
+    <script src="https://maps.googleapis.com/maps/api/js?v=3.exp&key=AIzaSyBsYVLaGllEz-XZYoF6xv_wqPsrG0k7oFs&libraries=places"></script>
+    <script src="https://mapstechnical.appspot.com/scripts/mapstechnical.js"></script>
+    <script src="https://mapstechnical.appspot.com/scripts/validate_geocoding.js"></script>    
+    
+    <script>
+	var map, service, directionsService, directionsDisplay, geocoder, marker, infowindow, stores;
+	var store_markers, store_infowindows,store_listeners, currentUserLocation, currentUserAddress;
+	var currentUserListener, currentUserInfoWindow;
+
+  
+	function initialize() {
+		geocoder = new google.maps.Geocoder();
+		service = new google.maps.DistanceMatrixService();
+
+		var mapOptions = {
+		zoom: 15,
+		center: new google.maps.LatLng(10.298378474845537,123.90464544296265),
+		mapTypeId: google.maps.MapTypeId.ROADMAP
+		};
+			
+		map = new google.maps.Map(document.getElementById('map-canvas'), mapOptions);
+		infowindow = new google.maps.InfoWindow();
+
+		directionsService = new google.maps.DirectionsService();
+		directionsDisplay = new google.maps.DirectionsRenderer();
+		directionsDisplay.setMap(map);
+		directionsDisplay.setPanel(document.getElementById('directions-panel'));
+
+		//display current user location
+		currentUserLocation = {};
+
+		var geoSuccess = function(position) {
+		startPos = position;
+		currentUserLocation = new google.maps.LatLng(startPos.coords.latitude,startPos.coords.longitude);
+
+		geocoder.geocode({'latLng': currentUserLocation}, function(results, status) { 
+			if (status == google.maps.GeocoderStatus.OK) {
+				currentUserAddress = results[0].formatted_address;
+			} else {
+				alert("Geocoder failed due to: " + status);
+			 }
+		});
+
+		currentLocationMarker = new google.maps.Marker({
+							map: map, 
+							icon: 'images/current_location.png',
+							position: currentUserLocation,
+					  });
+					  
+		currentUserListener = google.maps.event.addListener(currentLocationMarker, 'click', function(event) {
+			map.setCenter(new google.maps.LatLng( event.latLng.lat() , event.latLng.lng() ));
+			currentUserInfoWindow = new google.maps.InfoWindow();
+			currentUserInfoWindow.setContent('Current User Location </br> Address: ' + currentUserAddress);
+			currentUserInfoWindow.open(map, currentLocationMarker); 
+			store_infowindows.push(currentUserInfoWindow);				
+		});
+
+		map.setCenter(currentUserLocation);
+		};
+
+		navigator.geolocation.getCurrentPosition(geoSuccess);	
+
+		//retrieve all the stores using places API as a sample data of stores
+		setTimeout( function(){
+		var request = {
+		location: currentUserLocation,
+		radius: '5000',
+		types: ['store']
+		};
+
+		stores = [];
+		store_markers = [];
+		store_infowindows = [];
+		store_listeners = [];
+
+		var placeService = new google.maps.places.PlacesService(map);
+
+		placeService.nearbySearch(request, function(results, status) {
+		if (status == google.maps.places.PlacesServiceStatus.OK) {		  
+		  
+		  for (var i = 0; i < results.length; i++) {
+			var place = results[i];
+			stores.push({name: place.name,lat: place.geometry.location.lat(),lng: place.geometry.location.lng()});
+		  }
+		  
+		  for(var key in stores){
+			  var tempMarker = null;
+			  var tempListener = null;
+			  
+			  var tempStore = stores[key];
+			  var select = document.getElementById("locationSelect");
+			  var tempOption = document.createElement("option");
+			  tempOption.text = tempStore.name;
+			  tempOption.value = tempStore.name;
+			  tempOption.lat = tempStore.lat;
+			  tempOption.lng = tempStore.lng;
+			  select.add(tempOption);
+		  }
+		}
+		});
+
+		},500);
+	
+	}
+	
+	function calculateDistances(callbackDistance) {
+		  var origin = currentUserAddress;
+		  var selectedStore = document.getElementById('locationSelect').value;
+		  var selLatLng = null;
+		  
+		  for(var key in stores){
+			if(stores[key].name == selectedStore){
+				selLatLng = new google.maps.LatLng(stores[key].lat,stores[key].lng);
+				break;
+			}
+		  }
+		  
+		  var destination = selLatLng;
+		  
+		  service.getDistanceMatrix(
+		   {
+			origins: [origin],
+			destinations: [destination],
+			travelMode: google.maps.TravelMode.DRIVING,
+			unitSystem: google.maps.UnitSystem.METRIC,
+			avoidHighways: false,
+			avoidTolls: false
+		  }, callbackDistance);
+
+	}
+	
+	function callbackDistance(response, status) {
+		if (status != google.maps.DistanceMatrixStatus.OK) {
+			alert('Error was: ' + status);
+		} else {
+			var htmlText = 'Distance Information: </br>';
+			htmlText += 'From ' + response.originAddresses[0] + ' to ' + response.destinationAddresses[0] + ' : ' + response.rows[0].elements[0].distance.text + ' in ' + response.rows[0].elements[0].duration.text;
+			document.getElementById('outputDiv').innerHTML = htmlText;
+		}
+	}
+	
+	function showDirections() {
+	   var selectedStore = document.getElementById('locationSelect').value;
+	   var selLatLng = null;
+	  
+	  for(var key in stores){
+		if(stores[key].name == selectedStore){
+			selLatLng = new google.maps.LatLng(stores[key].lat,stores[key].lng);
+			break;
+		}
+	  }
+		  
+       var request = {
+           origin : currentUserAddress,
+           destination : selLatLng,
+           travelMode : google.maps.DirectionsTravelMode.DRIVING
+       }
+	   
+       directionsService.route(request, function(response, status) {		  
+          if(status == google.maps.DirectionsStatus.OK) {
+           directionsDisplay.setDirections(response);
+          }
+       });
+    }
+	  
+	google.maps.event.addDomListener(window, 'load', initialize);
+	
+	function getInfo(){
+		hideAllStores();
+		calculateDistances(callbackDistance);
+		showDirections();
+	}
+	
+	function showAllStores(){
+		hideAllStores();
+		//display all the stores
+		  for(var key in stores){
+			  var tempMarker = null;
+			  var tempListener = null;			  
+			  var tempStore = stores[key];
+			  
+			  if(typeof store_markers[tempStore.name] !== 'undefined') {
+				continue;
+			  }
+			  
+			  tempMarker = new google.maps.Marker({
+									map: map, 
+									icon: 'images/shopping_cart.png',
+									position: new google.maps.LatLng(tempStore.lat,tempStore.lng),
+									name: tempStore.name
+							  });		  
+			  
+			  tempListener = google.maps.event.addListener(tempMarker, 'click', function(event) {
+				  var secMarker = this;
+				  
+				  geocoder.geocode({'latLng': event.latLng}, function(results, status) {              
+						  if (status == google.maps.GeocoderStatus.OK) {
+							map.setCenter(new google.maps.LatLng( event.latLng.lat() , event.latLng.lng() ));
+							var tempinfowindow = new google.maps.InfoWindow();
+							tempinfowindow.setContent('Name: ' + secMarker.name + ' <br/>Address: ' + results[0].formatted_address);
+							tempinfowindow.open(map, secMarker); 
+							store_infowindows[tempStore.name] = tempinfowindow;
+						 } else {
+							alert("Geocoder failed due to: " + status);
+						 }
+					});
+			  });
+			  
+			  store_listeners[tempStore.name] = tempListener;
+			  store_markers[tempStore.name] = tempMarker;
+		  }
+	}
+	
+	function hideAllStores(){
+		for(var key in stores){
+			  var tempStore = stores[key];
+			  
+			  if(typeof store_infowindows[tempStore.name] === 'undefined'){}
+			  else {
+				store_infowindows[tempStore.name].close();
+			  }
+			  if(typeof store_markers[tempStore.name] === 'undefined'){}
+			  else {
+				store_markers[tempStore.name].setMap(null);
+			  }
+			  delete store_listeners[tempStore.name];
+			  delete store_markers[tempStore.name];
+		  }
+	}
+	
+	function showNearTop3KMStores(){
+		hideAllStores();
+		
+		var request = {
+			location: currentUserLocation,
+			radius: '300',
+			types: ['store']
+		  };
+
+		  var placeService = new google.maps.places.PlacesService(map);
+		  
+		  placeService.nearbySearch(request, function(results, status) {
+			if (status == google.maps.places.PlacesServiceStatus.OK) {			  
+			  
+			  for (var i = 0; i < results.length; i++) {
+				  var tempStore = results[i];
+				  stores.push({name: tempStore.name,lat: tempStore.geometry.location.lat(),lng: tempStore.geometry.location.lng()});
+				
+				  var tempMarker = null;
+				  var tempListener = null;
+				  
+				  if(typeof store_markers[tempStore.name] !== 'undefined') {
+					continue;
+				  }
+				  
+				  tempMarker = new google.maps.Marker({
+										map: map, 
+										position: new google.maps.LatLng(tempStore.geometry.location.lat(),tempStore.geometry.location.lng()),										
+										name: tempStore.name,
+										icon: 'images/shopping_cart.png',
+								  });		  
+				  
+				  tempListener = google.maps.event.addListener(tempMarker, 'click', function(event) {
+					  var secMarker = this;
+					  
+					  geocoder.geocode({'latLng': event.latLng}, function(results, status) {              
+							  if (status == google.maps.GeocoderStatus.OK) {
+								map.setCenter(new google.maps.LatLng( event.latLng.lat() , event.latLng.lng() ));
+								var tempinfowindow = new google.maps.InfoWindow();
+								tempinfowindow.setContent('Name: ' + secMarker.name + ' <br/>Address: ' + results[0].formatted_address);
+								tempinfowindow.open(map, secMarker); 
+								store_infowindows[tempStore.name] = tempinfowindow;
+							 } else {
+								alert("Geocoder failed due to: " + status);
+							 }
+						});
+				  });
+				  
+				  store_listeners[tempStore.name] = tempListener;
+				  store_markers[tempStore.name] = tempMarker;				  
+			  }
+			}
+		  });
+	}
+	
+    </script>
+  </head>
+  <body>
+	<div id="map-canvas"></div>
+	<div style="position: absolute;top: 0px;left: 50%"><h2><center>Store Locator</center></h2></div> 
+	<div style="position: absolute;top: 20px;right: 1%;width: 350px;height: 500px; background: #ffffff; padding: 10px;">  
+		<div>
+			<div style="height: 20px;padding-top: 10px;">
+				<button id="btnShowAll" onclick="showAllStores();">Show All Stores</button>
+				<button id="btnShowNear" onclick="showNearTop3KMStores();">Show Stores Near 300 KM</button>
+			</div>
+			<div style="height: 30px;padding-top: 10px;">
+				Store <select id="locationSelect" style="width:50%;"></select>
+				<button id="btnInfo" onclick="getInfo();">Get Info</button>
+			</div>
+		</div>
+		<div id="outputDiv" style="height: 60px;padding-top: 10px;text-align:top;">Distance Information:</div>
+		<div id="directions-panel" style="height: 365px;overflow-y: auto;">Directions:</div> 
+		<div style="clear:both;"></div>
+	</div>
+  </body>
+</html>      	
+      	
